@@ -5,7 +5,7 @@ import { MemoryDB, filterMemoriesType } from './lib/memory';
 import { LLMMessage, chatCompletion, fetchEmbedding } from './lib/openai';
 import { Message } from './schema';
 
-type Player = { id: Id<'players'>; name: string; identity: string };
+type Player = { id: Id<'players'>; name: string; identity: string; persona: string };
 type Relation = Player & { relationship?: string };
 
 export async function startConversation(
@@ -14,6 +14,7 @@ export async function startConversation(
   memory: MemoryDB,
   player: Player,
 ) {
+  console.log(`WATCH Event: ${player.name} starting conversation with ${audience.map(a => a.name)}`)
   const newFriendsNames = audience.map((p) => p.name);
 
   const { embedding } = await fetchEmbeddingWithCache(
@@ -25,22 +26,40 @@ export async function startConversation(
 
   const convoMemories = filterMemoriesType(['conversation'], memories);
 
+  let prompt_content = `You are ${player.name}. You just saw ${newFriendsNames}. You should greet them and start a conversation with them. \n` +
+    audience
+      .filter((r) => r.relationship)
+      .map((r) => `Your relationship with ${r.name} is: ${r.relationship}`)
+      .join('\n');
+  if (convoMemories.length > 0) {
+    prompt_content += `\nYou have talked to ${newFriendsNames} before. Here are some memories you have about them: `
+      + convoMemories.map((r) => r.memory.description).join('\n') + `\n${player.name}:`
+  }
+  console.log(`WATCH Prompt:`)
+  const prompt_content_chunks = prompt_content.match(/.{1,300}/g);
+  prompt_content_chunks!.forEach((chunk) => {
+    console.log("WATCH: "+chunk)
+  })
   const prompt: LLMMessage[] = [
     {
       role: 'user',
-      content:
-        `You are ${player.name}. You just saw ${newFriendsNames}. You should greet them and start a conversation with them. Below are some of your memories about ${newFriendsNames}:` +
-        audience
-          .filter((r) => r.relationship)
-          .map((r) => `Relationship with ${r.name}: ${r.relationship}`)
-          .join('\n') +
-        convoMemories.map((r) => r.memory.description).join('\n') +
-        `\n${player.name}:`,
+      content: prompt_content,
     },
   ];
   const stop = stopWords(newFriendsNames);
   const { content } = await chatCompletion({ messages: prompt, max_tokens: 300, stop });
-  return { content: trimContent(content, stop), memoryIds: memories.map((m) => m.memory._id) };
+  console.log(`WATCH Response:`)
+  const response_chunks = content.match(/.{1,300}/g);
+  response_chunks!.forEach((chunk) => {
+    console.log("WATCH: "+chunk)
+  })
+  const trimmed_content = trimContent(content, stop);
+  console.log(`WATCH Trimmed response:`)
+  const trimmed_chunks = trimmed_content.match(/.{1,300}/g);
+  trimmed_chunks!.forEach((chunk) => {
+    console.log("WATCH: "+chunk)
+  })
+  return { content: trimmed_content, memoryIds: memories.map((m) => m.memory._id) };
 }
 
 function messageContent(m: Message): string {
@@ -128,7 +147,7 @@ export async function converse(
   nearbyPlayers: Relation[],
   memory: MemoryDB,
 ) {
-  const nearbyPlayersNames = nearbyPlayers.join(', ');
+  const nearbyPlayersNames = nearbyPlayers.map(p => p.name).join(', ');
   const lastMessage: string | null | undefined = messages?.at(-1)?.content;
   const { embedding } = await fetchEmbedding(lastMessage ? lastMessage : '');
   const memories = await memory.accessMemories(player.id, embedding);
@@ -154,19 +173,28 @@ export async function converse(
     // console.debug('relevantReflections', relevantReflections);
   }
 
-  prefixPrompt += `\nYou are talking to ${nearbyPlayersNames}, below are something about them: `;
+  prefixPrompt += `\nYou are talking to ${nearbyPlayersNames}, below is some information about them: `;
 
   nearbyPlayers.forEach((p) => {
-    prefixPrompt += `\nAbout ${p.name}: ${p.identity}\n`;
-    if (p.relationship) prefixPrompt += `Relationship with ${p.name}: ${p.relationship}\n`;
+    prefixPrompt += `\nAbout ${p.name}: ${p.persona}\n`;
+    if (p.relationship) prefixPrompt += `Relationship with ${p.name}: ${p.relationship} \n`;
   });
 
-  prefixPrompt += `Last time you chatted with some of ${nearbyPlayersNames} it was ${lastConversationTs}. It's now ${Date.now()}. You can cut this conversation short if you talked to this group of people within the last day. \n}`;
+  const previousTimeDescription = lastConversationTs 
+    ? `Last time you chatted with some of ${nearbyPlayersNames} it was ${new Date(lastConversationTs).toLocaleString()}. It's now ${new Date(Date.now()).toLocaleString()}. You can cut this conversation short if you talked to this group of people within the last day. \n` 
+    : `You do not remember ever chatting with any of ${nearbyPlayersNames}. It's now ${new Date(Date.now()).toLocaleString()}.\n`; 
+  prefixPrompt += previousTimeDescription;
 
   prefixPrompt += `Below are relevant memories to this conversation you are having right now: ${relevantMemories}\n`;
 
   prefixPrompt +=
-    'Below are the current chat history between you and the other folks mentioned above. DO NOT greet the other people more than once. Only greet ONCE. Do not use the word Hey too often. Response should be brief and within 200 characters: \n';
+    'DO NOT greet the other people more than once. Only greet ONCE. Do not use the word Hey too often. Response should be brief and within 200 characters: \n';
+
+  console.log("WATCH Conversation prefix prompt:")
+  const prompt_content_chunks = prefixPrompt.match(/.{1,300}/g);
+  prompt_content_chunks!.forEach((chunk) => {
+    console.log("WATCH: "+chunk)
+  })
 
   const prompt: LLMMessage[] = [
     {
@@ -181,6 +209,11 @@ export async function converse(
   ];
   const stop = stopWords(nearbyPlayers.map((p) => p.name));
   const { content } = await chatCompletion({ messages: prompt, max_tokens: 300, stop });
+  console.log("WATCH Conversation response:")
+  const content_chunks = content.match(/.{1,300}/g);
+  content_chunks!.forEach((chunk) => {
+    console.log("WATCH: "+chunk)
+  })
   // console.debug('converse result through chatgpt: ', content);
   return { content: trimContent(content, stop), memoryIds: memories.map((m) => m.memory._id) };
 }

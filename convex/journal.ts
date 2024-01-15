@@ -44,6 +44,8 @@ export async function getPlayer(db: DatabaseReader, playerDoc: Doc<'players'>): 
   const latestConversation = await getLatestPlayerConversation(db, playerDoc._id);
   const identityEntry = await latestMemoryOfType(db, playerDoc._id, 'identity');
   const identity = identityEntry?.description ?? 'I am a person.';
+  const personaEntry = await latestMemoryOfType(db, playerDoc._id, 'persona');
+  const persona = personaEntry?.description ?? `They are a person who you don't know much about`;
   const planEntry = await latestMemoryOfType(db, playerDoc._id, 'plan');
 
   return {
@@ -52,6 +54,7 @@ export async function getPlayer(db: DatabaseReader, playerDoc: Doc<'players'>): 
     agentId: playerDoc.agentId,
     characterId: playerDoc.characterId,
     identity,
+    persona,
     motion: await getLatestPlayerMotion(db, playerDoc._id),
     thinking: agentDoc?.thinking ?? false,
     lastPlan: planEntry ? { plan: planEntry.description, ts: planEntry._creationTime } : undefined,

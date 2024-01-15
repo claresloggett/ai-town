@@ -81,6 +81,7 @@ export const Player = v.object({
   agentId: v.optional(v.id('agents')),
   characterId: v.id('characters'),
   identity: v.string(),
+  persona: v.string(),
   motion: Motion,
   thinking: v.boolean(),
   lastPlan: v.optional(v.object({ plan: v.string(), ts: v.number() })),
@@ -143,6 +144,10 @@ export const Memories = Table('memories', {
     // Useful for seed memories, high level goals
     v.object({
       type: v.literal('identity'),
+    }),
+    // Identity as percieved by other players
+    v.object({
+      type: v.literal('persona'),
     }),
     // Setting up dynamics between players
     v.object({
